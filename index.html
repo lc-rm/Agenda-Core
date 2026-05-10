@@ -182,9 +182,11 @@
   // ===== 状態管理 =====
   const state = {
     tasks: [],
+    clients: [],
     assignee: '向江村 章',  // デフォルトは向江村タブ
     mainTab: 'current',     // 'current' | 'past'
     filterStatus: 'all',
+    filterClient: '',       // クライアントID('' = 全部)
     filterText: '',
     editingId: null
   };
@@ -228,6 +230,16 @@
     if (diff < 0) return 'deadline-over';
     if (diff <= 1) return 'deadline-near';
     return '';
+  }
+
+  function getClientById(id) {
+    if (!id) return null;
+    return state.clients.find(c => c.id === id) || null;
+  }
+
+  function getClientName(id) {
+    const c = getClientById(id);
+    return c ? c.name : '';
   }
 
   // ===== レンダリング =====
@@ -311,6 +323,11 @@
     if (state.filterStatus !== 'all') {
       list = list.filter(t => t.status === state.filterStatus);
     }
+
+    // クライアント絞り込み
+    if (state.filterClient) {
+      list = list.filter(t => t.clientId === state.filterClient);
+    }
     const q = state.filterText.trim().toLowerCase();
     if (q) {
       list = list.filter(t =>
@@ -383,6 +400,7 @@
         </div>
 
         <div class="task-meta">
+          ${getClientName(t.clientId) ? `<span class="task-meta-item"><span class="client-tag">🏢 ${escapeHtml(getClientName(t.clientId))}</span></span>` : ''}
           ${t.deadline ? `<span class="task-meta-item ${dlClass}">📅 期限 ${escapeHtml(formatDate(t.deadline))}</span>` : ''}
           <span class="task-meta-item text-muted">登録 ${escapeHtml(formatDateTime(t.createdAt))} by ${escapeHtml(t.createdBy)}</span>
           ${t.updatedAt && t.updatedAt !== t.createdAt ? `<span class="task-meta-item text-muted">更新 ${escapeHtml(formatDateTime(t.updatedAt))} by ${escapeHtml(t.updatedBy)}</span>` : ''}
@@ -462,6 +480,9 @@
       document.getElementById('f-deadline').value = t.deadline || '';
       document.getElementById('f-status').value = t.status || '未着手';
       document.getElementById('f-assignee').value = t.assignee || '向江村 章';
+      // クライアント:既に選んでいるなら名前を検索窓に表示
+      document.getElementById('f-client-id').value = t.clientId || '';
+      document.getElementById('f-client-search').value = getClientName(t.clientId);
     } else {
       // 新規登録時:ステータスも担当者も非表示(自動設定)
       $statusWrap.classList.add('hidden');
@@ -469,7 +490,10 @@
       ['f-url','f-summary','f-details','f-deadline'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('f-status').value = '未着手';
       document.getElementById('f-assignee').value = state.assignee;  // 開いているタブの人
+      document.getElementById('f-client-id').value = '';
+      document.getElementById('f-client-search').value = '';
     }
+    document.getElementById('client-picker-list').classList.add('hidden');
     $modal.classList.remove('hidden');
     setTimeout(() => document.getElementById('f-summary').focus(), 50);
   }
@@ -541,7 +565,9 @@
       // 新規登録時は必ず未着手、編集時は選択値を反映
       status: isNew ? '未着手' : document.getElementById('f-status').value,
       // 新規:現在のタブの担当者、編集:選択値
-      assignee: isNew ? state.assignee : document.getElementById('f-assignee').value
+      assignee: isNew ? state.assignee : document.getElementById('f-assignee').value,
+      // クライアント(検索窓のテキストでなく、hiddenに入っているIDを使用)
+      clientId: document.getElementById('f-client-id').value || ''
     };
     const $msg = document.getElementById('modal-message');
 
@@ -608,10 +634,104 @@
     });
   });
 
+  // ===== クライアント絞り込み(ツールバー) =====
+  function renderClientFilter() {
+    const $sel = document.getElementById('filter-client');
+    const current = state.filterClient;
+    const sorted = state.clients.slice().sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    $sel.innerHTML = '<option value="">すべてのクライアント</option>' +
+      sorted.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === current ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+  }
+
+  document.getElementById('filter-client').addEventListener('change', (e) => {
+    state.filterClient = e.target.value;
+    renderTasks();
+  });
+
+  // ===== クライアントピッカー(モーダル内) =====
+  const $cSearch = document.getElementById('f-client-search');
+  const $cId = document.getElementById('f-client-id');
+  const $cList = document.getElementById('client-picker-list');
+
+  function renderClientPickerList(query) {
+    const q = (query || '').trim().toLowerCase();
+    const sorted = state.clients.slice().sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    const matches = q
+      ? sorted.filter(c => c.name.toLowerCase().includes(q))
+      : sorted;
+
+    let html = '';
+    matches.slice(0, 8).forEach(c => {
+      html += `<div class="client-picker-item" data-id="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>`;
+    });
+
+    // 入力された名前と完全一致するものがなければ「+ 新規追加」を出す
+    const hasExact = q && matches.some(c => c.name.toLowerCase() === q);
+    if (q && !hasExact) {
+      html += `<div class="client-picker-item add-new" data-add="${escapeHtml(query.trim())}">+ 「${escapeHtml(query.trim())}」を新規追加</div>`;
+    }
+
+    if (!html) {
+      html = '<div class="client-picker-empty">クライアントが登録されていません。名前を入力すると新規追加できます</div>';
+    }
+
+    $cList.innerHTML = html;
+    $cList.classList.remove('hidden');
+  }
+
+  $cSearch.addEventListener('focus', () => {
+    renderClientPickerList($cSearch.value);
+  });
+
+  $cSearch.addEventListener('input', () => {
+    // 編集中はIDをクリア(別のクライアントに変える可能性があるので)
+    $cId.value = '';
+    renderClientPickerList($cSearch.value);
+  });
+
+  // 候補クリック時の処理
+  $cList.addEventListener('click', async (e) => {
+    const item = e.target.closest('.client-picker-item');
+    if (!item) return;
+    if (item.classList.contains('add-new')) {
+      const name = item.dataset.add;
+      try {
+        const created = await AgendaStore.addClient(name);
+        // ローカルキャッシュにも反映
+        if (!state.clients.some(c => c.id === created.id)) {
+          state.clients.push(created);
+        }
+        renderClientFilter();
+        $cId.value = created.id;
+        $cSearch.value = created.name;
+      } catch (err) {
+        alert('クライアント追加に失敗:' + (err.message || ''));
+      }
+    } else {
+      $cId.value = item.dataset.id;
+      $cSearch.value = item.dataset.name;
+    }
+    $cList.classList.add('hidden');
+  });
+
+  // モーダル外クリックで候補を閉じる
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#client-picker')) {
+      $cList.classList.add('hidden');
+    }
+  });
+
   async function reload() {
     document.getElementById('task-container').innerHTML = '<div class="loading">読み込み中...</div>';
     try {
-      state.tasks = await AgendaStore.loadTaskList();
+      // タスクとクライアントを並列で取得
+      const [tasks, clients] = await Promise.all([
+        AgendaStore.loadTaskList(),
+        AgendaStore.loadClientList()
+      ]);
+      state.tasks = tasks;
+      state.clients = clients;
+      renderClientFilter();
       renderAssigneeCounts();
       renderTabCounts();
       renderStats();
@@ -630,7 +750,13 @@
 
   // 初期ロード(forceRefreshでキャッシュ無視)
   try {
-    state.tasks = await AgendaStore.loadTaskList();
+    const [tasks, clients] = await Promise.all([
+      AgendaStore.loadTaskList(),
+      AgendaStore.loadClientList()
+    ]);
+    state.tasks = tasks;
+    state.clients = clients;
+    renderClientFilter();
     renderAssigneeCounts();
     renderTabCounts();
     renderStats();

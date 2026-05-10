@@ -57,6 +57,24 @@
     </div>
   </div>
 
+  <!-- クライアント管理 -->
+  <div class="section">
+    <h2 class="section-title">クライアント管理</h2>
+    <div class="row">
+      <div class="field">
+        <label class="field-label">クライアント名を追加</label>
+        <input type="text" id="new-client-name" class="field-input" placeholder="例:株式会社Link Core">
+      </div>
+      <div class="field" style="flex: 0 0 100px; display: flex; align-items: flex-end;">
+        <button id="btn-add-client" class="btn btn-primary btn-block">追加</button>
+      </div>
+    </div>
+    <div id="client-add-message"></div>
+    <div id="client-list" class="mt-2">
+      <div class="loading">読み込み中...</div>
+    </div>
+  </div>
+
   <!-- 初期設定リンク発行 -->
   <div class="section">
     <h2 class="section-title">初期設定リンクを発行</h2>
@@ -316,8 +334,109 @@
     }
   });
 
+  // ===== クライアント管理 =====
+  async function renderClientList() {
+    const $c = document.getElementById('client-list');
+    try {
+      const clients = await AgendaStore.loadClientList();
+      if (!clients.length) {
+        $c.innerHTML = '<div class="empty-state">クライアントがまだ登録されていません</div>';
+        return;
+      }
+      const sorted = clients.slice().sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      $c.innerHTML = `
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th style="width: 60%;">クライアント名</th>
+              <th style="width: 20%;">追加日</th>
+              <th style="width: 20%;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map(c => `
+              <tr data-id="${escapeHtml(c.id)}">
+                <td>
+                  <input type="text" class="field-input client-name-input" value="${escapeHtml(c.name)}" data-orig="${escapeHtml(c.name)}" style="font-size: 13px;">
+                </td>
+                <td class="text-muted">${escapeHtml(formatDate(c.createdAt))}</td>
+                <td>
+                  <button class="btn btn-sm act-save-client">保存</button>
+                  <button class="btn btn-sm btn-danger act-delete-client">削除</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      $c.querySelectorAll('.act-save-client').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const tr = e.target.closest('tr');
+          const id = tr.dataset.id;
+          const input = tr.querySelector('.client-name-input');
+          const newName = input.value.trim();
+          const orig = input.dataset.orig;
+          if (!newName) {
+            alert('クライアント名を入力してください');
+            input.value = orig;
+            return;
+          }
+          if (newName === orig) return;
+          try {
+            await AgendaStore.updateClient(id, newName);
+            input.dataset.orig = newName;
+            // 簡易フィードバック
+            btn.textContent = '✓ 保存';
+            setTimeout(() => { btn.textContent = '保存'; }, 1500);
+          } catch (err) {
+            alert('変更失敗:' + (err.message || ''));
+            input.value = orig;
+          }
+        });
+      });
+
+      $c.querySelectorAll('.act-delete-client').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const tr = e.target.closest('tr');
+          const id = tr.dataset.id;
+          const name = tr.querySelector('.client-name-input').dataset.orig;
+          if (!confirm(`クライアント「${name}」を削除しますか?\n(既存のタスクからは「クライアント不明」として表示されます)`)) return;
+          try {
+            await AgendaStore.deleteClient(id);
+            await renderClientList();
+          } catch (err) {
+            alert('削除失敗:' + (err.message || ''));
+          }
+        });
+      });
+    } catch (err) {
+      $c.innerHTML = `<div class="alert alert-error">読み込み失敗:${escapeHtml(err.message || '')}</div>`;
+    }
+  }
+
+  document.getElementById('btn-add-client').addEventListener('click', async () => {
+    const $msg = document.getElementById('client-add-message');
+    $msg.innerHTML = '';
+    const name = document.getElementById('new-client-name').value.trim();
+    if (!name) {
+      $msg.innerHTML = '<div class="alert alert-error">クライアント名を入力してください</div>';
+      return;
+    }
+    try {
+      await AgendaStore.addClient(name);
+      document.getElementById('new-client-name').value = '';
+      $msg.innerHTML = `<div class="alert alert-success">「${escapeHtml(name)}」を追加しました</div>`;
+      await renderClientList();
+      setTimeout(() => $msg.innerHTML = '', 3000);
+    } catch (err) {
+      $msg.innerHTML = `<div class="alert alert-error">追加失敗:${escapeHtml(err.message || '')}</div>`;
+    }
+  });
+
   // 初期表示
   renderUserList();
+  renderClientList();
 })();
 </script>
 </body>
