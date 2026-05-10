@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ログイン - Agenda Core</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="assets/koala-wave.png" alt="" class="koala auth-koala">
+      <h1 class="auth-brand-title">Agenda Core</h1>
+      <p class="auth-brand-sub">社長タスク管理</p>
+    </div>
+
+    <form id="login-form">
+      <div class="field">
+        <label class="field-label" for="loginId">ログインID</label>
+        <input type="text" id="loginId" class="field-input" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label class="field-label" for="loginPw">パスワード</label>
+        <input type="password" id="loginPw" class="field-input" autocomplete="current-password" required>
+      </div>
+
+      <div id="message"></div>
+
+      <button type="submit" class="btn btn-primary btn-block mt-2">ログイン</button>
+    </form>
+  </div>
+</div>
+
+<script src="github-store.js"></script>
+<script>
+(function() {
+  const $form = document.getElementById('login-form');
+  const $msg = document.getElementById('message');
+
+  // すでにログイン済みならリダイレクト
+  if (AgendaStore.isLoggedIn()) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  $form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $msg.innerHTML = '';
+
+    const id = document.getElementById('loginId').value.trim();
+    const pw = document.getElementById('loginPw').value;
+
+    // 1) 共有ID/PWチェック
+    if (!AgendaStore.checkSharedCredentials(id, pw)) {
+      $msg.innerHTML = '<div class="alert alert-error">IDまたはパスワードが違います。</div>';
+      return;
+    }
+
+    // 2) PATが保存されているか
+    if (!AgendaStore.getToken()) {
+      $msg.innerHTML = '<div class="alert alert-error">このPCは初期設定が完了していません。<br>管理者から「初期設定リンク」を受け取ってください。</div>';
+      return;
+    }
+
+    // 3) PATが有効か検証(users.jsonにアクセスできるか)
+    try {
+      $msg.innerHTML = '<div class="alert alert-info">認証中...</div>';
+      await AgendaStore.loadUsers(true);
+      AgendaStore.setUnlocked(true);
+      window.location.href = 'operator-select.html';
+    } catch (err) {
+      let m = 'ログインキーが無効です。管理者に連絡してください。';
+      if (err.message === 'UNAUTHORIZED') {
+        m = 'アクセストークンの有効期限が切れているか、無効になっています。<br>管理者にリンクの再発行を依頼してください。';
+      }
+      $msg.innerHTML = `<div class="alert alert-error">${m}</div>`;
+    }
+  });
+})();
+</script>
+</body>
+</html>

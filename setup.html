@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>初期設定 - Agenda Core</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="assets/koala-work.png" alt="" class="koala auth-koala">
+      <h1 class="auth-brand-title">Agenda Core</h1>
+      <p class="auth-brand-sub">初期設定</p>
+    </div>
+
+    <div id="status" class="loading">アクセス情報を確認しています...</div>
+    <div id="message"></div>
+
+    <div id="actions" class="hidden mt-2">
+      <a href="login.html" class="btn btn-primary btn-block">ログイン画面へ</a>
+    </div>
+  </div>
+</div>
+
+<script src="github-store.js"></script>
+<script>
+(async function() {
+  const $status = document.getElementById('status');
+  const $message = document.getElementById('message');
+  const $actions = document.getElementById('actions');
+
+  function showError(msg) {
+    $status.classList.add('hidden');
+    $message.innerHTML = `<div class="alert alert-error">${msg}</div>`;
+  }
+  function showSuccess(msg) {
+    $status.classList.add('hidden');
+    $message.innerHTML = `<div class="alert alert-success">${msg}</div>`;
+    $actions.classList.remove('hidden');
+  }
+
+  // URLハッシュからtokenとemailを取得
+  // 例: setup.html#token=ghp_xxx&email=hisho@example.com
+  const hash = window.location.hash.replace(/^#/, '');
+  const params = new URLSearchParams(hash);
+  const token = params.get('token');
+  const email = params.get('email');
+
+  if (!token || !email) {
+    showError('リンクが正しくありません。<br>管理者から「初期設定リンク」を再発行してもらってください。');
+    return;
+  }
+
+  try {
+    // PATを保存して認証テスト
+    await AgendaStore.authenticate(token);
+
+    // users.jsonに登録済みか確認
+    const users = await AgendaStore.loadUserList();
+    const isSuperAdmin = email === AgendaStore.SUPER_ADMIN_EMAIL;
+    const found = users.some(u => u.email === email);
+
+    if (!isSuperAdmin && !found) {
+      AgendaStore.logout();
+      showError(`「${email}」は登録されていません。<br>管理者に担当者の追加を依頼してください。`);
+      return;
+    }
+
+    showSuccess(`初期設定が完了しました。<br>このPCで <strong>${email}</strong> として利用できます。`);
+
+    // URLからtokenを消す(ブラウザ履歴に残さないため)
+    history.replaceState(null, '', 'setup.html');
+  } catch (e) {
+    let msg = '初期設定に失敗しました。';
+    if (e.message === 'UNAUTHORIZED') {
+      msg += '<br>アクセストークンが無効です。管理者にリンクの再発行を依頼してください。';
+    } else if (e.message === 'NOT_FOUND') {
+      msg += '<br>データリポジトリが見つかりません(管理者に連絡)。';
+    } else {
+      msg += '<br>' + (e.message || '');
+    }
+    showError(msg);
+  }
+})();
+</script>
+</body>
+</html>

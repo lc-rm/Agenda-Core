@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理 - Agenda Core</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1 class="app-title">
+    <img src="assets/koala-thumbs.png" alt="" class="koala header-koala">
+    Agenda Core <span style="font-size:13px; color:var(--ink-muted); font-weight:500;">管理</span>
+  </h1>
+  <div class="user-bar">
+    <span><span id="user-name" class="user-bar-name">-</span></span>
+    <span id="user-role" class="user-bar-role">-</span>
+    <a href="index.html">ダッシュボードへ</a>
+    <a href="#" id="link-logout">ログアウト</a>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- 担当者追加 -->
+  <div class="section">
+    <h2 class="section-title">担当者を追加</h2>
+    <div class="row">
+      <div class="field" style="flex: 0 0 200px;">
+        <label class="field-label">氏名</label>
+        <input type="text" id="new-name" class="field-input" placeholder="例:山田 太郎">
+      </div>
+      <div class="field">
+        <label class="field-label">メールアドレス</label>
+        <input type="email" id="new-email" class="field-input" placeholder="taro@example.com">
+      </div>
+      <div class="field" style="flex: 0 0 140px;">
+        <label class="field-label">権限</label>
+        <select id="new-role" class="field-select">
+          <option value="member">メンバー</option>
+          <option value="admin">管理者</option>
+        </select>
+      </div>
+      <div class="field" style="flex: 0 0 100px; display: flex; align-items: flex-end;">
+        <button id="btn-add-user" class="btn btn-primary btn-block">追加</button>
+      </div>
+    </div>
+    <div id="add-message"></div>
+  </div>
+
+  <!-- 担当者一覧 -->
+  <div class="section">
+    <h2 class="section-title">担当者一覧</h2>
+    <div id="user-list">
+      <div class="loading">読み込み中...</div>
+    </div>
+  </div>
+
+  <!-- 初期設定リンク発行 -->
+  <div class="section">
+    <h2 class="section-title">初期設定リンクを発行</h2>
+    <p class="text-muted mb-0">他のPCで使い始めるとき、または追加した担当者用のリンクを発行します。<br>
+    生成されたURLをChatworkで担当者に送ってください。リンクをクリックするとそのPCで使えるようになります。</p>
+
+    <div class="row mt-2">
+      <div class="field">
+        <label class="field-label">対象担当者</label>
+        <select id="link-user" class="field-select"></select>
+      </div>
+      <div class="field">
+        <label class="field-label">アクセストークン(PAT)</label>
+        <input type="password" id="link-pat" class="field-input" placeholder="github_pat_xxx... (空欄ならこのPCのトークンを使用)">
+        <p class="field-help">通常は空欄のままでOK(このPCのトークンを自動使用)</p>
+      </div>
+      <div class="field" style="flex: 0 0 140px; display: flex; align-items: flex-end;">
+        <button id="btn-make-link" class="btn btn-primary btn-block">リンク生成</button>
+      </div>
+    </div>
+
+    <div id="link-result" class="hidden mt-2">
+      <label class="field-label">生成された初期設定リンク</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="link-url" class="field-input" readonly style="font-family: monospace; font-size: 12px;">
+        <button id="btn-copy-link" class="btn">📋 コピー</button>
+      </div>
+      <p class="text-muted mt-1">⚠ このリンクにはアクセストークンが含まれています。Chatworkのダイレクトチャットなど安全な方法で送ってください。</p>
+    </div>
+    <div id="link-message"></div>
+  </div>
+
+</main>
+
+<script src="github-store.js"></script>
+<script>
+(async function() {
+  if (!Auth.requireLogin()) return;
+
+  // usersキャッシュをロード
+  try {
+    await AgendaStore.loadUsers();
+  } catch (e) {
+    if (e.message === 'UNAUTHORIZED') {
+      AgendaStore.logout();
+      window.location.href = 'login.html';
+      return;
+    }
+  }
+
+  if (!Auth.requireAdmin()) return;
+
+  document.getElementById('user-name').textContent = AgendaStore.getCurrentUserDisplayName() || '?';
+  const role = AgendaStore.getCurrentUserRole();
+  const roleEl = document.getElementById('user-role');
+  roleEl.textContent = role === 'super_admin' ? '絶対管理者' : '管理者';
+  roleEl.className = 'user-bar-role ' + role;
+
+  document.getElementById('link-logout').addEventListener('click', (e) => {
+    e.preventDefault();
+    AgendaStore.softLogout();
+    window.location.href = 'login.html';
+  });
+
+  // ===== ユーティリティ =====
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function roleLabel(r) {
+    if (r === 'super_admin') return '絶対管理者';
+    if (r === 'admin') return '管理者';
+    return 'メンバー';
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  // ===== 担当者一覧 =====
+  async function renderUserList() {
+    const $c = document.getElementById('user-list');
+    try {
+      const users = await AgendaStore.loadUserList();
+
+      if (!users.length) {
+        $c.innerHTML = '<div class="empty-state">担当者がまだ登録されていません</div>';
+        renderLinkUserOptions([]);
+        return;
+      }
+
+      const html = `
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th style="width: 40%;">氏名 / メールアドレス</th>
+              <th style="width: 16%;">権限</th>
+              <th style="width: 18%;">追加日</th>
+              <th style="width: 26%;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${users.map(u => `
+              <tr data-email="${escapeHtml(u.email)}">
+                <td>
+                  <div style="font-weight:600;">${escapeHtml(u.displayName)}</div>
+                  <div class="text-muted">${escapeHtml(u.email)}</div>
+                </td>
+                <td>
+                  ${u.email === AgendaStore.SUPER_ADMIN_EMAIL
+                    ? `<span class="user-bar-role super_admin">絶対管理者</span>`
+                    : `<select class="field-select sel-role" style="font-size:12px; padding:4px 8px;">
+                         <option value="member" ${u.role === 'member' ? 'selected' : ''}>メンバー</option>
+                         <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理者</option>
+                       </select>`
+                  }
+                </td>
+                <td class="text-muted">${escapeHtml(formatDate(u.addedAt))}</td>
+                <td>
+                  ${u.email === AgendaStore.SUPER_ADMIN_EMAIL
+                    ? '<span class="text-muted">削除不可</span>'
+                    : '<button class="btn btn-sm btn-danger act-delete">削除</button>'
+                  }
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      $c.innerHTML = html;
+
+      // 削除ハンドラ
+      $c.querySelectorAll('.act-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const tr = e.target.closest('tr');
+          const email = tr.dataset.email;
+          if (!confirm(`担当者「${email}」を削除しますか?`)) return;
+          try {
+            await AgendaStore.deleteUser(email);
+            await renderUserList();
+          } catch (err) {
+            alert('削除失敗:' + (err.message || ''));
+          }
+        });
+      });
+
+      // 権限変更ハンドラ
+      $c.querySelectorAll('.sel-role').forEach(sel => {
+        sel.addEventListener('change', async (e) => {
+          const tr = e.target.closest('tr');
+          const email = tr.dataset.email;
+          const newRole = e.target.value;
+          try {
+            await AgendaStore.updateUserRole(email, newRole);
+          } catch (err) {
+            alert('権限変更失敗:' + (err.message || ''));
+            await renderUserList();
+          }
+        });
+      });
+
+      renderLinkUserOptions(users);
+    } catch (err) {
+      $c.innerHTML = `<div class="alert alert-error">読み込み失敗:${escapeHtml(err.message || '')}</div>`;
+    }
+  }
+
+  function renderLinkUserOptions(users) {
+    const $sel = document.getElementById('link-user');
+    const allUsers = users.slice();
+    // SUPER_ADMINがusers.jsonに含まれていない可能性があるので追加
+    if (!allUsers.some(u => u.email === AgendaStore.SUPER_ADMIN_EMAIL)) {
+      allUsers.unshift({
+        email: AgendaStore.SUPER_ADMIN_EMAIL,
+        displayName: '絶対管理者',
+        role: 'super_admin'
+      });
+    }
+    $sel.innerHTML = allUsers.map(u =>
+      `<option value="${escapeHtml(u.email)}">${escapeHtml(u.displayName)} (${escapeHtml(u.email)})</option>`
+    ).join('');
+  }
+
+  // ===== 担当者追加 =====
+  document.getElementById('btn-add-user').addEventListener('click', async () => {
+    const $msg = document.getElementById('add-message');
+    $msg.innerHTML = '';
+
+    const name = document.getElementById('new-name').value.trim();
+    const email = document.getElementById('new-email').value.trim();
+    const role = document.getElementById('new-role').value;
+
+    if (!name || !email) {
+      $msg.innerHTML = '<div class="alert alert-error">氏名とメールアドレスは必須です</div>';
+      return;
+    }
+
+    try {
+      await AgendaStore.addUser({ email, displayName: name, role });
+      document.getElementById('new-name').value = '';
+      document.getElementById('new-email').value = '';
+      document.getElementById('new-role').value = 'member';
+      $msg.innerHTML = `<div class="alert alert-success">「${escapeHtml(name)}」を追加しました</div>`;
+      await renderUserList();
+      setTimeout(() => $msg.innerHTML = '', 3000);
+    } catch (err) {
+      $msg.innerHTML = `<div class="alert alert-error">追加失敗:${escapeHtml(err.message || '')}</div>`;
+    }
+  });
+
+  // ===== 初期設定リンク生成 =====
+  document.getElementById('btn-make-link').addEventListener('click', () => {
+    const $msg = document.getElementById('link-message');
+    const $result = document.getElementById('link-result');
+    $msg.innerHTML = '';
+
+    const email = document.getElementById('link-user').value;
+    let pat = document.getElementById('link-pat').value.trim();
+    if (!pat) pat = AgendaStore.getToken();
+
+    if (!email) {
+      $msg.innerHTML = '<div class="alert alert-error">対象担当者を選択してください</div>';
+      return;
+    }
+    if (!pat) {
+      $msg.innerHTML = '<div class="alert alert-error">アクセストークンが取得できません</div>';
+      return;
+    }
+
+    // 現在のページURLを基準にsetup.htmlのURLを作る
+    const base = window.location.href.replace(/[^/]*$/, '');
+    const url = `${base}setup.html#token=${encodeURIComponent(pat)}&email=${encodeURIComponent(email)}`;
+
+    document.getElementById('link-url').value = url;
+    $result.classList.remove('hidden');
+  });
+
+  document.getElementById('btn-copy-link').addEventListener('click', async () => {
+    const $url = document.getElementById('link-url');
+    try {
+      await navigator.clipboard.writeText($url.value);
+      const orig = document.getElementById('btn-copy-link').textContent;
+      document.getElementById('btn-copy-link').textContent = '✓ コピーしました';
+      setTimeout(() => {
+        document.getElementById('btn-copy-link').textContent = orig;
+      }, 2000);
+    } catch (e) {
+      // フォールバック
+      $url.select();
+      document.execCommand('copy');
+      alert('リンクをコピーしました');
+    }
+  });
+
+  // 初期表示
+  renderUserList();
+})();
+</script>
+</body>
+</html>

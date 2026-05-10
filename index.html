@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenda Core - 社長タスク管理</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1 class="app-title">
+    <img src="assets/koala-work.png" alt="" class="koala header-koala">
+    Agenda Core
+  </h1>
+  <div class="user-bar">
+    <span><span id="user-name" class="user-bar-name">-</span></span>
+    <span id="user-role" class="user-bar-role">-</span>
+    <a href="#" id="link-admin" class="hidden">管理</a>
+    <a href="#" id="link-switch">担当切替</a>
+    <a href="#" id="link-logout">ログアウト</a>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- メインタブ:現在 / 過去 -->
+  <div class="main-tabs">
+    <button class="main-tab active" data-tab="current">
+      <span class="main-tab-label">現在対応中</span>
+      <span class="main-tab-count" id="tab-count-current">0</span>
+    </button>
+    <button class="main-tab" data-tab="past">
+      <span class="main-tab-label">過去のタスク</span>
+      <span class="main-tab-count" id="tab-count-past">0</span>
+    </button>
+  </div>
+
+  <div class="toolbar">
+    <button id="btn-new" class="btn btn-primary">+ 新しいタスクを登録</button>
+    <input type="text" id="filter-text" class="field-input" placeholder="検索(依頼者・概要・本文)" style="width: 260px;">
+    <div class="toolbar-spacer"></div>
+    <button id="btn-refresh" class="btn btn-sm">↻ 再読み込み</button>
+  </div>
+
+  <div id="stat-row" class="stat-row"></div>
+
+  <div id="task-container">
+    <div class="loading">タスクを読み込み中...</div>
+  </div>
+
+</main>
+
+<!-- 新規/編集モーダル -->
+<div id="modal-edit" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 class="modal-title" id="modal-title">タスクを登録</h2>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Chatworkメッセージリンク <span class="text-muted">(任意)</span></label>
+        <input type="url" id="f-url" class="field-input" placeholder="https://www.chatwork.com/#!rid...">
+        <p class="field-help">該当メッセージのURLを貼り付けると、ワンクリックで開けます</p>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label class="field-label">依頼者</label>
+          <input type="text" id="f-sender" class="field-input" placeholder="例:○○商事 田中様">
+        </div>
+        <div class="field" style="flex: 0 0 140px;">
+          <label class="field-label">期限</label>
+          <input type="date" id="f-deadline" class="field-input">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">概要 <span class="text-muted">*必須</span></label>
+        <input type="text" id="f-summary" class="field-input" placeholder="例:見積もり依頼の件" required>
+      </div>
+      <div class="field">
+        <label class="field-label">詳細・メモ</label>
+        <textarea id="f-details" class="field-textarea" placeholder="社長への申し送り、依頼内容の詳細など"></textarea>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label class="field-label">優先度</label>
+          <select id="f-priority" class="field-select">
+            <option value="high">高</option>
+            <option value="medium" selected>中</option>
+            <option value="low">低</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">ステータス</label>
+          <select id="f-status" class="field-select">
+            <option value="未着手">未着手</option>
+            <option value="進行中">進行中</option>
+            <option value="引継ぎ済">引継ぎ済</option>
+            <option value="対応不要">対応不要</option>
+            <option value="完了">完了</option>
+          </select>
+        </div>
+      </div>
+      <div id="modal-message"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>キャンセル</button>
+      <button id="btn-save" class="btn btn-primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="github-store.js"></script>
+<script>
+(async function() {
+  if (!Auth.requireLogin()) return;
+
+  // 利用者情報を表示するためのusersキャッシュをロード
+  try {
+    await AgendaStore.loadUsers();
+  } catch (e) {
+    if (e.message === 'UNAUTHORIZED') {
+      AgendaStore.logout();
+      window.location.href = 'login.html';
+      return;
+    }
+  }
+
+  // ユーザーバー
+  document.getElementById('user-name').textContent = AgendaStore.getCurrentUserDisplayName() || '?';
+  const role = AgendaStore.getCurrentUserRole();
+  const roleEl = document.getElementById('user-role');
+  roleEl.textContent = role === 'super_admin' ? '絶対管理者' : (role === 'admin' ? '管理者' : 'メンバー');
+  roleEl.className = 'user-bar-role ' + (role || '');
+
+  if (AgendaStore.isAdmin()) {
+    document.getElementById('link-admin').classList.remove('hidden');
+    document.getElementById('link-admin').href = 'admin.html';
+  }
+
+  document.getElementById('link-switch').addEventListener('click', (e) => {
+    e.preventDefault();
+    AgendaStore.softLogout();
+    AgendaStore.setUnlocked(true); // PATは生きてるのでログイン画面ではなく担当者選択へ
+    window.location.href = 'operator-select.html';
+  });
+
+  document.getElementById('link-logout').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!confirm('ログアウトしますか?(このPCのアクセストークンは保持されます)')) return;
+    AgendaStore.softLogout();
+    window.location.href = 'login.html';
+  });
+
+  // ===== 状態管理 =====
+  const state = {
+    tasks: [],
+    mainTab: 'current',     // 'current' | 'past'
+    filterStatus: 'all',
+    filterText: '',
+    editingId: null
+  };
+
+  const STATUS_LIST = ['未着手', '進行中', '引継ぎ済', '対応不要', '完了'];
+  const CURRENT_STATUSES = ['未着手', '進行中'];
+  const PAST_STATUSES = ['引継ぎ済', '対応不要', '完了'];
+
+  // ===== ユーティリティ =====
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+  function nl2br(s) { return escapeHtml(s).replace(/\n/g, '<br>'); }
+
+  function priorityLabel(p) {
+    return { high: '高', medium: '中', low: '低' }[p] || '中';
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function formatDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  function deadlineClass(deadline, status) {
+    if (!deadline || status === '完了' || status === '対応不要') return '';
+    const d = new Date(deadline);
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const diff = (d - now) / 86400000;
+    if (diff < 0) return 'deadline-over';
+    if (diff <= 1) return 'deadline-near';
+    return '';
+  }
+
+  // ===== レンダリング =====
+  function renderTabCounts() {
+    let cur = 0, past = 0;
+    state.tasks.forEach(t => {
+      if (CURRENT_STATUSES.includes(t.status)) cur++;
+      else if (PAST_STATUSES.includes(t.status)) past++;
+    });
+    document.getElementById('tab-count-current').textContent = cur;
+    document.getElementById('tab-count-past').textContent = past;
+  }
+
+  function renderStats() {
+    // タブに対応するステータスだけを表示
+    const tabStatuses = state.mainTab === 'current' ? CURRENT_STATUSES : PAST_STATUSES;
+
+    const counts = { all: 0 };
+    tabStatuses.forEach(s => counts[s] = 0);
+    state.tasks.forEach(t => {
+      if (tabStatuses.includes(t.status)) {
+        counts.all++;
+        counts[t.status]++;
+      }
+    });
+
+    const allLabel = state.mainTab === 'current' ? 'すべて(現在)' : 'すべて(過去)';
+    const items = [
+      { key: 'all', label: allLabel, value: counts.all },
+      ...tabStatuses.map(s => ({ key: s, label: s, value: counts[s] }))
+    ];
+
+    const html = items.map(it => `
+      <div class="stat-card ${state.filterStatus === it.key ? 'active' : ''}" data-status="${escapeHtml(it.key)}">
+        <div class="stat-label">${escapeHtml(it.label)}</div>
+        <div class="stat-value">${it.value}</div>
+      </div>
+    `).join('');
+
+    const $row = document.getElementById('stat-row');
+    $row.innerHTML = html;
+    // 現在タブは3カラム(すべて+未着手+進行中)、過去タブは4カラム(すべて+3つ)に
+    $row.style.gridTemplateColumns = state.mainTab === 'current'
+      ? 'repeat(3, 1fr)'
+      : 'repeat(4, 1fr)';
+    $row.querySelectorAll('.stat-card').forEach(card => {
+      card.addEventListener('click', () => {
+        state.filterStatus = card.dataset.status;
+        renderStats();
+        renderTasks();
+      });
+    });
+  }
+
+  function getFilteredTasks() {
+    // まずタブで絞り込み
+    const tabStatuses = state.mainTab === 'current' ? CURRENT_STATUSES : PAST_STATUSES;
+    let list = state.tasks.filter(t => tabStatuses.includes(t.status));
+
+    if (state.filterStatus !== 'all') {
+      list = list.filter(t => t.status === state.filterStatus);
+    }
+    const q = state.filterText.trim().toLowerCase();
+    if (q) {
+      list = list.filter(t =>
+        (t.summary || '').toLowerCase().includes(q) ||
+        (t.sender || '').toLowerCase().includes(q) ||
+        (t.details || '').toLowerCase().includes(q)
+      );
+    }
+    // 並び替え:完了/対応不要は下、それ以外は更新日新しい順、優先度高いほど上
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const inactiveStatus = { '完了': 1, '対応不要': 1 };
+    list.sort((a, b) => {
+      const ai = inactiveStatus[a.status] ? 1 : 0;
+      const bi = inactiveStatus[b.status] ? 1 : 0;
+      if (ai !== bi) return ai - bi;
+      const ap = priorityOrder[a.priority] ?? 1;
+      const bp = priorityOrder[b.priority] ?? 1;
+      if (ap !== bp) return ap - bp;
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
+    return list;
+  }
+
+  function renderTasks() {
+    const list = getFilteredTasks();
+    const $c = document.getElementById('task-container');
+
+    if (!list.length) {
+      const isEmptyAll = state.tasks.length === 0;
+      const koalaImg = isEmptyAll ? 'assets/koala-cheer.png' : 'assets/koala-wave2.png';
+      const msg = isEmptyAll
+        ? '登録されたタスクはまだありません。<br>「+ 新しいタスクを登録」から追加してください。'
+        : '該当するタスクがありません';
+      $c.innerHTML = `<div class="empty-state">
+        <img src="${koalaImg}" alt="" class="koala empty-koala">
+        <div>${msg}</div>
+      </div>`;
+      return;
+    }
+
+    $c.innerHTML = `<div class="task-list">${list.map(renderTaskCard).join('')}</div>`;
+    bindTaskCardEvents();
+  }
+
+  function renderTaskCard(t) {
+    const dlClass = deadlineClass(t.deadline, t.status);
+    const memos = (t.memos || []).map(m => `
+      <div class="memo-item">
+        <div class="memo-head">
+          <span class="memo-author">${escapeHtml(m.by)}</span>
+          <span>${escapeHtml(formatDateTime(m.at))}</span>
+        </div>
+        <div class="memo-text">${nl2br(m.text)}</div>
+      </div>
+    `).join('');
+
+    const linkBtn = t.chatworkUrl
+      ? `<a href="${escapeHtml(t.chatworkUrl)}" target="_blank" rel="noopener" class="btn btn-sm">↗ Chatworkで開く</a>`
+      : '';
+
+    const statusOptions = STATUS_LIST.map(s =>
+      `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`
+    ).join('');
+
+    return `
+      <div class="task-card status-${escapeHtml(t.status)}" data-id="${escapeHtml(t.id)}">
+        <div class="task-card-head">
+          <h3 class="task-summary">${escapeHtml(t.summary || '(無題)')}</h3>
+          <div style="display: flex; gap: 6px; flex-shrink: 0;">
+            <span class="priority-badge priority-${escapeHtml(t.priority)}">優先度:${priorityLabel(t.priority)}</span>
+            <span class="status-badge status-${escapeHtml(t.status)}">${escapeHtml(t.status)}</span>
+          </div>
+        </div>
+
+        <div class="task-meta">
+          ${t.sender ? `<span class="task-meta-item">👤 ${escapeHtml(t.sender)}</span>` : ''}
+          ${t.deadline ? `<span class="task-meta-item ${dlClass}">📅 期限 ${escapeHtml(formatDate(t.deadline))}</span>` : ''}
+          <span class="task-meta-item text-muted">登録 ${escapeHtml(formatDateTime(t.createdAt))} by ${escapeHtml(t.createdBy)}</span>
+          ${t.updatedAt && t.updatedAt !== t.createdAt ? `<span class="task-meta-item text-muted">更新 ${escapeHtml(formatDateTime(t.updatedAt))} by ${escapeHtml(t.updatedBy)}</span>` : ''}
+        </div>
+
+        ${t.details ? `<div class="task-details">${nl2br(t.details)}</div>` : ''}
+
+        ${memos ? `<div class="memo-list">${memos}</div>` : ''}
+
+        <div class="task-actions">
+          ${linkBtn}
+          <select class="field-select status-quick" style="width: auto; padding: 6px 8px; font-size: 12px;">
+            ${statusOptions}
+          </select>
+          <button class="btn btn-sm act-memo">+ メモ追加</button>
+          <button class="btn btn-sm act-edit">編集</button>
+          <button class="btn btn-sm btn-danger act-delete">削除</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindTaskCardEvents() {
+    document.querySelectorAll('.task-card').forEach(card => {
+      const id = card.dataset.id;
+      card.querySelector('.status-quick').addEventListener('change', async (e) => {
+        const newStatus = e.target.value;
+        try {
+          await AgendaStore.updateTask(id, { status: newStatus });
+          await reload();
+        } catch (err) {
+          alert('更新失敗:' + (err.message || ''));
+        }
+      });
+      card.querySelector('.act-edit').addEventListener('click', () => openEditModal(id));
+      card.querySelector('.act-delete').addEventListener('click', async () => {
+        if (!confirm('このタスクを削除しますか?この操作は取り消せません。')) return;
+        try {
+          await AgendaStore.deleteTask(id);
+          await reload();
+        } catch (err) {
+          alert('削除失敗:' + (err.message || ''));
+        }
+      });
+      card.querySelector('.act-memo').addEventListener('click', async () => {
+        const text = prompt('メモを追加:');
+        if (!text || !text.trim()) return;
+        try {
+          await AgendaStore.addMemo(id, text.trim());
+          await reload();
+        } catch (err) {
+          alert('メモ追加失敗:' + (err.message || ''));
+        }
+      });
+    });
+  }
+
+  // ===== モーダル =====
+  const $modal = document.getElementById('modal-edit');
+
+  function openEditModal(id) {
+    state.editingId = id || null;
+    document.getElementById('modal-title').textContent = id ? 'タスクを編集' : 'タスクを登録';
+    document.getElementById('modal-message').innerHTML = '';
+
+    if (id) {
+      const t = state.tasks.find(x => x.id === id);
+      if (!t) return;
+      document.getElementById('f-url').value = t.chatworkUrl || '';
+      document.getElementById('f-sender').value = t.sender || '';
+      document.getElementById('f-summary').value = t.summary || '';
+      document.getElementById('f-details').value = t.details || '';
+      document.getElementById('f-deadline').value = t.deadline || '';
+      document.getElementById('f-priority').value = t.priority || 'medium';
+      document.getElementById('f-status').value = t.status || '未着手';
+    } else {
+      ['f-url','f-sender','f-summary','f-details','f-deadline'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('f-priority').value = 'medium';
+      document.getElementById('f-status').value = '未着手';
+    }
+    $modal.classList.remove('hidden');
+    setTimeout(() => document.getElementById('f-summary').focus(), 50);
+  }
+
+  function closeModal() {
+    $modal.classList.add('hidden');
+    state.editingId = null;
+  }
+
+  $modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeModal));
+  $modal.addEventListener('click', (e) => {
+    if (e.target === $modal) closeModal();
+  });
+
+  document.getElementById('btn-new').addEventListener('click', () => openEditModal(null));
+
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const data = {
+      chatworkUrl: document.getElementById('f-url').value.trim(),
+      sender: document.getElementById('f-sender').value.trim(),
+      summary: document.getElementById('f-summary').value.trim(),
+      details: document.getElementById('f-details').value.trim(),
+      deadline: document.getElementById('f-deadline').value,
+      priority: document.getElementById('f-priority').value,
+      status: document.getElementById('f-status').value
+    };
+    const $msg = document.getElementById('modal-message');
+
+    if (!data.summary) {
+      $msg.innerHTML = '<div class="alert alert-error">「概要」は必須です</div>';
+      return;
+    }
+
+    $msg.innerHTML = '<div class="alert alert-info">保存中...</div>';
+    document.getElementById('btn-save').disabled = true;
+    try {
+      if (state.editingId) {
+        await AgendaStore.updateTask(state.editingId, data);
+      } else {
+        await AgendaStore.addTask(data);
+      }
+      closeModal();
+      await reload();
+    } catch (err) {
+      $msg.innerHTML = `<div class="alert alert-error">保存失敗:${escapeHtml(err.message || '')}</div>`;
+    } finally {
+      document.getElementById('btn-save').disabled = false;
+    }
+  });
+
+  // ===== 検索 =====
+  document.getElementById('filter-text').addEventListener('input', (e) => {
+    state.filterText = e.target.value;
+    renderTasks();
+  });
+
+  document.getElementById('btn-refresh').addEventListener('click', reload);
+
+  // ===== メインタブ切り替え =====
+  document.querySelectorAll('.main-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const newTab = tab.dataset.tab;
+      if (state.mainTab === newTab) return;
+      state.mainTab = newTab;
+      state.filterStatus = 'all';  // タブ切り替え時はステータス絞り込みもリセット
+      document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderStats();
+      renderTasks();
+    });
+  });
+
+  async function reload() {
+    document.getElementById('task-container').innerHTML = '<div class="loading">読み込み中...</div>';
+    try {
+      state.tasks = await AgendaStore.loadTaskList();
+      renderTabCounts();
+      renderStats();
+      renderTasks();
+    } catch (err) {
+      let m = err.message === 'UNAUTHORIZED'
+        ? 'アクセストークンが無効になりました。再ログインしてください。'
+        : `読み込み失敗:${err.message || ''}`;
+      document.getElementById('task-container').innerHTML = `<div class="alert alert-error">${escapeHtml(m)}</div>`;
+      if (err.message === 'UNAUTHORIZED') {
+        AgendaStore.logout();
+        setTimeout(() => window.location.href = 'login.html', 1500);
+      }
+    }
+  }
+
+  // 初期ロード(forceRefreshでキャッシュ無視)
+  try {
+    state.tasks = await AgendaStore.loadTaskList();
+    renderTabCounts();
+    renderStats();
+    renderTasks();
+  } catch (err) {
+    document.getElementById('task-container').innerHTML = `<div class="alert alert-error">読み込み失敗:${escapeHtml(err.message || '')}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>担当者選択 - Agenda Core</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="auth-screen" style="align-items: flex-start; padding-top: 60px;">
+  <div style="width: 100%; max-width: 720px;">
+    <div class="auth-brand">
+      <img src="assets/koala-thumbs.png" alt="" class="koala auth-koala">
+      <h1 class="auth-brand-title">Agenda Core</h1>
+      <p class="auth-brand-sub">このPCで作業する担当者を選択してください</p>
+    </div>
+
+    <div id="container">
+      <div class="loading">担当者を読み込み中...</div>
+    </div>
+
+    <div class="text-right mt-2">
+      <a href="#" id="logout-link" class="text-muted">ログアウト</a>
+    </div>
+  </div>
+</div>
+
+<script src="github-store.js"></script>
+<script>
+(async function() {
+  const $container = document.getElementById('container');
+
+  // セッションロックチェック(共有ID/PW未入力なら戻す)
+  if (!AgendaStore.isUnlocked() || !AgendaStore.getToken()) {
+    window.location.href = 'login.html';
+    return;
+  }
+
+  document.getElementById('logout-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    AgendaStore.logout();
+    window.location.href = 'login.html';
+  });
+
+  // emailから5種のキャラ画像を決定的に選ぶ
+  const KOALA_IMAGES = [
+    'assets/koala-wave.png',
+    'assets/koala-thumbs.png',
+    'assets/koala-cheer.png',
+    'assets/koala-work.png',
+    'assets/koala-wave2.png'
+  ];
+  function pickKoala(email) {
+    const s = String(email || '');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return KOALA_IMAGES[h % KOALA_IMAGES.length];
+  }
+
+  function roleLabel(role) {
+    if (role === 'super_admin') return '絶対管理者';
+    if (role === 'admin') return '管理者';
+    return 'メンバー';
+  }
+
+  function roleClass(role) {
+    if (role === 'super_admin') return 'super_admin';
+    if (role === 'admin') return 'admin';
+    return '';
+  }
+
+  try {
+    const users = await AgendaStore.loadUserList();
+
+    if (!users.length) {
+      $container.innerHTML = `
+        <div class="auth-card">
+          <div class="alert alert-info">担当者がまだ登録されていません。<br>
+          管理者として続けるには下のボタンを押してください。</div>
+          <button id="continue-as-admin" class="btn btn-primary btn-block mt-1">絶対管理者として続行</button>
+        </div>`;
+
+      document.getElementById('continue-as-admin').addEventListener('click', async () => {
+        await AgendaStore.selectOperator(AgendaStore.SUPER_ADMIN_EMAIL);
+        window.location.href = 'admin.html';
+      });
+      return;
+    }
+
+    const html = `
+      <div class="operator-grid">
+        ${users.map(u => `
+          <div class="operator-card" data-email="${escapeHtml(u.email)}">
+            <img src="${pickKoala(u.email)}" alt="" class="koala operator-koala">
+            <p class="operator-name">${escapeHtml(u.displayName)}</p>
+            <p class="operator-email">${escapeHtml(u.email)}</p>
+            <span class="user-bar-role ${roleClass(u.role)}">${roleLabel(u.role)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    $container.innerHTML = html;
+
+    document.querySelectorAll('.operator-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const email = card.dataset.email;
+        try {
+          await AgendaStore.selectOperator(email);
+          window.location.href = 'index.html';
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  } catch (err) {
+    let m = '担当者の読み込みに失敗しました。';
+    if (err.message === 'UNAUTHORIZED') {
+      m += '<br>アクセストークンが無効です。管理者にリンクの再発行を依頼してください。';
+      AgendaStore.logout();
+    } else {
+      m += '<br>' + escapeHtml(err.message || '');
+    }
+    $container.innerHTML = `<div class="auth-card"><div class="alert alert-error">${m}</div>
+      <a href="login.html" class="btn btn-block mt-1">ログイン画面へ戻る</a></div>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+})();
+</script>
+</body>
+</html>
