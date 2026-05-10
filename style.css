@@ -661,6 +661,48 @@ a:hover { text-decoration: underline; }
   display: block;
 }
 
+/* ===== 取り込み中オーバーレイ ===== */
+.modal-body {
+  position: relative;
+}
+
+.extract-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 10;
+  border-radius: var(--radius-lg);
+  animation: fadeIn 0.2s ease;
+}
+
+.extract-koala {
+  width: 96px;
+  height: 96px;
+  animation: koalaBounce 0.6s ease infinite alternate;
+}
+
+.extract-message {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes koalaBounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-8px); }
+}
+
 /* ===== 担当者タブ(大タブ) ===== */
 .assignee-tabs {
   display: flex;

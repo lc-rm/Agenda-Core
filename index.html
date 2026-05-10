@@ -70,7 +70,7 @@
       <h2 class="modal-title" id="modal-title">タスクを登録</h2>
       <button class="modal-close" data-close>&times;</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" id="modal-body-inner">
       <div class="field">
         <label class="field-label">Chatworkメッセージリンク <span class="text-muted">(任意)</span></label>
         <input type="url" id="f-url" class="field-input" placeholder="https://www.chatwork.com/#!rid...">
@@ -81,8 +81,11 @@
         <input type="text" id="f-summary" class="field-input" placeholder="例:見積もり依頼の件" required>
       </div>
       <div class="field">
-        <label class="field-label">詳細・メモ</label>
-        <textarea id="f-details" class="field-textarea" placeholder="社長への申し送り、依頼内容の詳細など"></textarea>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+          <label class="field-label" style="margin-bottom: 0;">詳細・メモ</label>
+          <button type="button" id="btn-extract-link" class="btn btn-sm">📋 リンクを抽出</button>
+        </div>
+        <textarea id="f-details" class="field-textarea" placeholder="社長への申し送り、依頼内容の詳細など&#10;&#10;Chatworkの引用+リンクをそのまま貼り付けて「リンクを抽出」を押すと、URLだけ上の欄に移動します"></textarea>
       </div>
       <div class="row">
         <div class="field" style="flex: 0 0 180px;">
@@ -109,6 +112,12 @@
         <p class="field-help">変更すると別のタブに移動します</p>
       </div>
       <div id="modal-message"></div>
+
+      <!-- 取り込み中オーバーレイ -->
+      <div id="extract-overlay" class="extract-overlay hidden">
+        <img src="assets/koala-work.png" alt="" class="koala extract-koala">
+        <p class="extract-message">取り込み中...</p>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" data-close>キャンセル</button>
@@ -465,6 +474,51 @@
   });
 
   document.getElementById('btn-new').addEventListener('click', () => openEditModal(null));
+
+  // ===== リンク抽出ボタン =====
+  document.getElementById('btn-extract-link').addEventListener('click', async () => {
+    const $details = document.getElementById('f-details');
+    const $url = document.getElementById('f-url');
+    const $overlay = document.getElementById('extract-overlay');
+    const $msg = document.getElementById('modal-message');
+    $msg.innerHTML = '';
+
+    const text = $details.value;
+    if (!text.trim()) {
+      $msg.innerHTML = '<div class="alert alert-info">詳細欄が空です。Chatworkのメッセージを貼り付けてからお試しください</div>';
+      return;
+    }
+
+    // オーバーレイを表示(視覚的フィードバック)
+    $overlay.classList.remove('hidden');
+
+    // 0.4秒だけ待つ(取り込んでる感を出す)
+    await new Promise(r => setTimeout(r, 400));
+
+    // ChatworkのメッセージURLを優先的に探す。なければ普通のhttp(s)://を探す
+    const chatworkRegex = /https?:\/\/(?:www\.)?chatwork\.com\/[^\s\u3000]+/i;
+    const generalRegex = /https?:\/\/[^\s\u3000]+/i;
+
+    let match = text.match(chatworkRegex);
+    if (!match) match = text.match(generalRegex);
+
+    if (!match) {
+      $overlay.classList.add('hidden');
+      $msg.innerHTML = '<div class="alert alert-info">URLが見つかりませんでした。そのまま保存してOKです</div>';
+      return;
+    }
+
+    const url = match[0];
+    // URLを削除して、空行を整理
+    const cleaned = text.replace(url, '').replace(/\n{3,}/g, '\n\n').trim();
+
+    $url.value = url;
+    $details.value = cleaned;
+
+    $overlay.classList.add('hidden');
+    $msg.innerHTML = '<div class="alert alert-success">✓ URLを抽出しました</div>';
+    setTimeout(() => { $msg.innerHTML = ''; }, 2500);
+  });
 
   document.getElementById('btn-save').addEventListener('click', async () => {
     const isNew = !state.editingId;
