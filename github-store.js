@@ -310,12 +310,11 @@
     const task = {
       id: genTaskId(),
       chatworkUrl: taskData.chatworkUrl || '',
-      sender: taskData.sender || '',
       summary: taskData.summary || '',
       details: taskData.details || '',
       deadline: taskData.deadline || '',
-      priority: taskData.priority || 'medium',
       status: taskData.status || '未着手',
+      assignee: taskData.assignee || '向江村 章',
       memos: [],
       createdAt: now,
       createdBy: me,

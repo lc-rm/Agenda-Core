@@ -661,6 +661,65 @@ a:hover { text-decoration: underline; }
   display: block;
 }
 
+/* ===== 担当者タブ(大タブ) ===== */
+.assignee-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: var(--bg-subtle);
+  padding: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.assignee-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 18px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.assignee-tab:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.assignee-tab.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 2px 6px rgba(26, 168, 154, 0.25);
+}
+
+.assignee-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.4);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.assignee-tab:not(.active) .assignee-tab-count {
+  background: var(--bg-card);
+  color: var(--ink-muted);
+}
+
 /* ===== メインタブ(現在/過去) ===== */
 .main-tabs {
   display: flex;

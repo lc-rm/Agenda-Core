@@ -24,6 +24,18 @@
 
 <main class="app-main">
 
+  <!-- 担当者タブ(大タブ) -->
+  <div class="assignee-tabs">
+    <button class="assignee-tab active" data-assignee="向江村 章">
+      <span class="assignee-tab-label">向江村のタスク</span>
+      <span class="assignee-tab-count" id="assignee-count-mukaemura">0</span>
+    </button>
+    <button class="assignee-tab" data-assignee="村井 莉彩">
+      <span class="assignee-tab-label">村井のタスク</span>
+      <span class="assignee-tab-count" id="assignee-count-murai">0</span>
+    </button>
+  </div>
+
   <!-- メインタブ:現在 / 過去 -->
   <div class="main-tabs">
     <button class="main-tab active" data-tab="current">
@@ -38,7 +50,7 @@
 
   <div class="toolbar">
     <button id="btn-new" class="btn btn-primary">+ 新しいタスクを登録</button>
-    <input type="text" id="filter-text" class="field-input" placeholder="検索(依頼者・概要・本文)" style="width: 260px;">
+    <input type="text" id="filter-text" class="field-input" placeholder="検索(概要・詳細)" style="width: 260px;">
     <div class="toolbar-spacer"></div>
     <button id="btn-refresh" class="btn btn-sm">↻ 再読み込み</button>
   </div>
@@ -64,16 +76,6 @@
         <input type="url" id="f-url" class="field-input" placeholder="https://www.chatwork.com/#!rid...">
         <p class="field-help">該当メッセージのURLを貼り付けると、ワンクリックで開けます</p>
       </div>
-      <div class="row">
-        <div class="field">
-          <label class="field-label">依頼者</label>
-          <input type="text" id="f-sender" class="field-input" placeholder="例:○○商事 田中様">
-        </div>
-        <div class="field" style="flex: 0 0 140px;">
-          <label class="field-label">期限</label>
-          <input type="date" id="f-deadline" class="field-input">
-        </div>
-      </div>
       <div class="field">
         <label class="field-label">概要 <span class="text-muted">*必須</span></label>
         <input type="text" id="f-summary" class="field-input" placeholder="例:見積もり依頼の件" required>
@@ -83,15 +85,11 @@
         <textarea id="f-details" class="field-textarea" placeholder="社長への申し送り、依頼内容の詳細など"></textarea>
       </div>
       <div class="row">
-        <div class="field">
-          <label class="field-label">優先度</label>
-          <select id="f-priority" class="field-select">
-            <option value="high">高</option>
-            <option value="medium" selected>中</option>
-            <option value="low">低</option>
-          </select>
+        <div class="field" style="flex: 0 0 180px;">
+          <label class="field-label">期限</label>
+          <input type="date" id="f-deadline" class="field-input">
         </div>
-        <div class="field">
+        <div class="field" id="f-status-wrap" style="flex: 0 0 180px;">
           <label class="field-label">ステータス</label>
           <select id="f-status" class="field-select">
             <option value="未着手">未着手</option>
@@ -101,6 +99,14 @@
             <option value="完了">完了</option>
           </select>
         </div>
+      </div>
+      <div class="field hidden" id="f-assignee-wrap">
+        <label class="field-label">担当者(タスクの帰属タブ)</label>
+        <select id="f-assignee" class="field-select">
+          <option value="向江村 章">向江村のタスク</option>
+          <option value="村井 莉彩">村井のタスク</option>
+        </select>
+        <p class="field-help">変更すると別のタブに移動します</p>
       </div>
       <div id="modal-message"></div>
     </div>
@@ -156,6 +162,7 @@
   // ===== 状態管理 =====
   const state = {
     tasks: [],
+    assignee: '向江村 章',  // デフォルトは向江村タブ
     mainTab: 'current',     // 'current' | 'past'
     filterStatus: 'all',
     filterText: '',
@@ -165,6 +172,7 @@
   const STATUS_LIST = ['未着手', '進行中', '引継ぎ済', '対応不要', '完了'];
   const CURRENT_STATUSES = ['未着手', '進行中'];
   const PAST_STATUSES = ['引継ぎ済', '対応不要', '完了'];
+  const ASSIGNEES = ['向江村 章', '村井 莉彩'];
 
   // ===== ユーティリティ =====
   function escapeHtml(s) {
@@ -203,9 +211,26 @@
   }
 
   // ===== レンダリング =====
-  function renderTabCounts() {
-    let cur = 0, past = 0;
+  function renderAssigneeCounts() {
+    const counts = { '向江村 章': 0, '村井 莉彩': 0 };
     state.tasks.forEach(t => {
+      const a = t.assignee || '向江村 章';
+      if (counts[a] != null) counts[a]++;
+    });
+    document.getElementById('assignee-count-mukaemura').textContent = counts['向江村 章'];
+    document.getElementById('assignee-count-murai').textContent = counts['村井 莉彩'];
+  }
+
+  function getAssigneeTasks() {
+    // 現在の担当者タブのタスクだけ抽出
+    return state.tasks.filter(t => (t.assignee || '向江村 章') === state.assignee);
+  }
+
+  function renderTabCounts() {
+    // 現在の担当者タブのタスクの中での「現在/過去」を集計
+    const myTasks = getAssigneeTasks();
+    let cur = 0, past = 0;
+    myTasks.forEach(t => {
       if (CURRENT_STATUSES.includes(t.status)) cur++;
       else if (PAST_STATUSES.includes(t.status)) past++;
     });
@@ -214,12 +239,13 @@
   }
 
   function renderStats() {
-    // タブに対応するステータスだけを表示
+    // 担当者タブ + メインタブで絞り込んだ範囲のステータス集計
+    const myTasks = getAssigneeTasks();
     const tabStatuses = state.mainTab === 'current' ? CURRENT_STATUSES : PAST_STATUSES;
 
     const counts = { all: 0 };
     tabStatuses.forEach(s => counts[s] = 0);
-    state.tasks.forEach(t => {
+    myTasks.forEach(t => {
       if (tabStatuses.includes(t.status)) {
         counts.all++;
         counts[t.status]++;
@@ -255,9 +281,12 @@
   }
 
   function getFilteredTasks() {
-    // まずタブで絞り込み
+    // まず担当者タブで絞り込み
+    let list = getAssigneeTasks();
+
+    // メインタブ(現在/過去)で絞り込み
     const tabStatuses = state.mainTab === 'current' ? CURRENT_STATUSES : PAST_STATUSES;
-    let list = state.tasks.filter(t => tabStatuses.includes(t.status));
+    list = list.filter(t => tabStatuses.includes(t.status));
 
     if (state.filterStatus !== 'all') {
       list = list.filter(t => t.status === state.filterStatus);
@@ -266,20 +295,20 @@
     if (q) {
       list = list.filter(t =>
         (t.summary || '').toLowerCase().includes(q) ||
-        (t.sender || '').toLowerCase().includes(q) ||
         (t.details || '').toLowerCase().includes(q)
       );
     }
-    // 並び替え:完了/対応不要は下、それ以外は更新日新しい順、優先度高いほど上
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    const inactiveStatus = { '完了': 1, '対応不要': 1 };
+    // 並び替え:期限が近いものを上、期限なしは下、新しい更新を優先
     list.sort((a, b) => {
-      const ai = inactiveStatus[a.status] ? 1 : 0;
-      const bi = inactiveStatus[b.status] ? 1 : 0;
-      if (ai !== bi) return ai - bi;
-      const ap = priorityOrder[a.priority] ?? 1;
-      const bp = priorityOrder[b.priority] ?? 1;
-      if (ap !== bp) return ap - bp;
+      // 期限ありが上、期限なしが下
+      const aHas = a.deadline ? 0 : 1;
+      const bHas = b.deadline ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;
+      // 期限ありどうしは期限の早い順
+      if (a.deadline && b.deadline && a.deadline !== b.deadline) {
+        return a.deadline < b.deadline ? -1 : 1;
+      }
+      // それ以外は更新日が新しい順
       return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
     return list;
@@ -330,14 +359,10 @@
       <div class="task-card status-${escapeHtml(t.status)}" data-id="${escapeHtml(t.id)}">
         <div class="task-card-head">
           <h3 class="task-summary">${escapeHtml(t.summary || '(無題)')}</h3>
-          <div style="display: flex; gap: 6px; flex-shrink: 0;">
-            <span class="priority-badge priority-${escapeHtml(t.priority)}">優先度:${priorityLabel(t.priority)}</span>
-            <span class="status-badge status-${escapeHtml(t.status)}">${escapeHtml(t.status)}</span>
-          </div>
+          <span class="status-badge status-${escapeHtml(t.status)}">${escapeHtml(t.status)}</span>
         </div>
 
         <div class="task-meta">
-          ${t.sender ? `<span class="task-meta-item">👤 ${escapeHtml(t.sender)}</span>` : ''}
           ${t.deadline ? `<span class="task-meta-item ${dlClass}">📅 期限 ${escapeHtml(formatDate(t.deadline))}</span>` : ''}
           <span class="task-meta-item text-muted">登録 ${escapeHtml(formatDateTime(t.createdAt))} by ${escapeHtml(t.createdBy)}</span>
           ${t.updatedAt && t.updatedAt !== t.createdAt ? `<span class="task-meta-item text-muted">更新 ${escapeHtml(formatDateTime(t.updatedAt))} by ${escapeHtml(t.updatedBy)}</span>` : ''}
@@ -403,20 +428,27 @@
     document.getElementById('modal-title').textContent = id ? 'タスクを編集' : 'タスクを登録';
     document.getElementById('modal-message').innerHTML = '';
 
+    const $statusWrap = document.getElementById('f-status-wrap');
+    const $assigneeWrap = document.getElementById('f-assignee-wrap');
     if (id) {
+      // 編集時:ステータスも担当者も変更可能
+      $statusWrap.classList.remove('hidden');
+      $assigneeWrap.classList.remove('hidden');
       const t = state.tasks.find(x => x.id === id);
       if (!t) return;
       document.getElementById('f-url').value = t.chatworkUrl || '';
-      document.getElementById('f-sender').value = t.sender || '';
       document.getElementById('f-summary').value = t.summary || '';
       document.getElementById('f-details').value = t.details || '';
       document.getElementById('f-deadline').value = t.deadline || '';
-      document.getElementById('f-priority').value = t.priority || 'medium';
       document.getElementById('f-status').value = t.status || '未着手';
+      document.getElementById('f-assignee').value = t.assignee || '向江村 章';
     } else {
-      ['f-url','f-sender','f-summary','f-details','f-deadline'].forEach(id => document.getElementById(id).value = '');
-      document.getElementById('f-priority').value = 'medium';
+      // 新規登録時:ステータスも担当者も非表示(自動設定)
+      $statusWrap.classList.add('hidden');
+      $assigneeWrap.classList.add('hidden');
+      ['f-url','f-summary','f-details','f-deadline'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('f-status').value = '未着手';
+      document.getElementById('f-assignee').value = state.assignee;  // 開いているタブの人
     }
     $modal.classList.remove('hidden');
     setTimeout(() => document.getElementById('f-summary').focus(), 50);
@@ -435,14 +467,16 @@
   document.getElementById('btn-new').addEventListener('click', () => openEditModal(null));
 
   document.getElementById('btn-save').addEventListener('click', async () => {
+    const isNew = !state.editingId;
     const data = {
       chatworkUrl: document.getElementById('f-url').value.trim(),
-      sender: document.getElementById('f-sender').value.trim(),
       summary: document.getElementById('f-summary').value.trim(),
       details: document.getElementById('f-details').value.trim(),
       deadline: document.getElementById('f-deadline').value,
-      priority: document.getElementById('f-priority').value,
-      status: document.getElementById('f-status').value
+      // 新規登録時は必ず未着手、編集時は選択値を反映
+      status: isNew ? '未着手' : document.getElementById('f-status').value,
+      // 新規:現在のタブの担当者、編集:選択値
+      assignee: isNew ? state.assignee : document.getElementById('f-assignee').value
     };
     const $msg = document.getElementById('modal-message');
 
@@ -476,7 +510,26 @@
 
   document.getElementById('btn-refresh').addEventListener('click', reload);
 
-  // ===== メインタブ切り替え =====
+  // ===== 担当者タブ切り替え(大タブ) =====
+  document.querySelectorAll('.assignee-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const newAssignee = tab.dataset.assignee;
+      if (state.assignee === newAssignee) return;
+      state.assignee = newAssignee;
+      state.mainTab = 'current';        // 担当者切り替え時は現在タブに戻す
+      state.filterStatus = 'all';
+      document.querySelectorAll('.assignee-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      // 小タブも見た目をリセット
+      document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.main-tab[data-tab="current"]').classList.add('active');
+      renderTabCounts();
+      renderStats();
+      renderTasks();
+    });
+  });
+
+  // ===== メインタブ切り替え(小タブ) =====
   document.querySelectorAll('.main-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       const newTab = tab.dataset.tab;
@@ -494,6 +547,7 @@
     document.getElementById('task-container').innerHTML = '<div class="loading">読み込み中...</div>';
     try {
       state.tasks = await AgendaStore.loadTaskList();
+      renderAssigneeCounts();
       renderTabCounts();
       renderStats();
       renderTasks();
@@ -512,6 +566,7 @@
   // 初期ロード(forceRefreshでキャッシュ無視)
   try {
     state.tasks = await AgendaStore.loadTaskList();
+    renderAssigneeCounts();
     renderTabCounts();
     renderStats();
     renderTasks();
