@@ -18,26 +18,26 @@
   <div class="user-bar">
     <span><span id="user-name" class="user-bar-name">-</span></span>
     <span id="user-role" class="user-bar-role">-</span>
-    <div class="user-bar-actions">
-      <a href="#" id="link-admin" class="user-bar-btn hidden">⚙ 管理</a>
-      <a href="#" id="link-switch" class="user-bar-btn">👤 担当切替</a>
-    </div>
-    <a href="#" id="link-logout" class="user-bar-btn user-bar-btn-logout" title="ログアウト">↗</a>
+    <a href="#" id="link-switch" class="user-bar-btn">👤 担当切替</a>
+    <a href="#" id="link-logout" class="user-bar-btn user-bar-btn-logout" title="ログアウト">ログアウト</a>
   </div>
 </header>
 
 <main class="app-main">
 
-  <!-- 担当者タブ(大タブ) -->
-  <div class="assignee-tabs">
-    <button class="assignee-tab active" data-assignee="向江村 章">
-      <span class="assignee-tab-label">向江村のタスク</span>
-      <span class="assignee-tab-count" id="assignee-count-mukaemura">0</span>
-    </button>
-    <button class="assignee-tab" data-assignee="村井 莉彩">
-      <span class="assignee-tab-label">村井のタスク</span>
-      <span class="assignee-tab-count" id="assignee-count-murai">0</span>
-    </button>
+  <!-- 担当者タブ(大タブ)+ 管理ボタン -->
+  <div class="assignee-tabs-row">
+    <div class="assignee-tabs">
+      <button class="assignee-tab active" data-assignee="向江村 章">
+        <span class="assignee-tab-label">向江村のタスク</span>
+        <span class="assignee-tab-count" id="assignee-count-mukaemura">0</span>
+      </button>
+      <button class="assignee-tab" data-assignee="村井 莉彩">
+        <span class="assignee-tab-label">村井のタスク</span>
+        <span class="assignee-tab-count" id="assignee-count-murai">0</span>
+      </button>
+    </div>
+    <a href="#" id="link-admin" class="admin-btn hidden">⚙ 管理</a>
   </div>
 
   <!-- メインタブ:現在 / 過去 -->
