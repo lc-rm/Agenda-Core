@@ -77,15 +77,15 @@
         <p class="field-help">該当メッセージのURLを貼り付けると、ワンクリックで開けます</p>
       </div>
       <div class="field">
-        <label class="field-label">概要 <span class="text-muted">*必須</span></label>
-        <input type="text" id="f-summary" class="field-input" placeholder="例:見積もり依頼の件" required>
-      </div>
-      <div class="field">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-          <label class="field-label" style="margin-bottom: 0;">詳細・メモ</label>
+          <label class="field-label" style="margin-bottom: 0;">概要 <span class="text-muted">*必須</span></label>
           <button type="button" id="btn-extract-link" class="btn btn-sm">📋 リンクを抽出</button>
         </div>
-        <textarea id="f-details" class="field-textarea" placeholder="社長への申し送り、依頼内容の詳細など&#10;&#10;Chatworkの引用+リンクをそのまま貼り付けて「リンクを抽出」を押すと、URLだけ上の欄に移動します"></textarea>
+        <textarea id="f-summary" class="field-textarea" placeholder="Chatworkの引用+リンクをそのまま貼り付けてOK&#10;「リンクを抽出」を押すと、URLだけ上の欄に移動します" required style="min-height: 140px;"></textarea>
+      </div>
+      <div class="field">
+        <label class="field-label">メモ <span class="text-muted">(任意・補足や申し送り)</span></label>
+        <input type="text" id="f-details" class="field-input" placeholder="例:急ぎ案件、社長確認後返信予定">
       </div>
       <div class="row">
         <div class="field" style="flex: 0 0 180px;">
@@ -367,7 +367,7 @@
     return `
       <div class="task-card status-${escapeHtml(t.status)}" data-id="${escapeHtml(t.id)}">
         <div class="task-card-head">
-          <h3 class="task-summary">${escapeHtml(t.summary || '(無題)')}</h3>
+          <h3 class="task-summary">${nl2br(t.summary || '(無題)')}</h3>
           <span class="status-badge status-${escapeHtml(t.status)}">${escapeHtml(t.status)}</span>
         </div>
 
@@ -377,7 +377,7 @@
           ${t.updatedAt && t.updatedAt !== t.createdAt ? `<span class="task-meta-item text-muted">更新 ${escapeHtml(formatDateTime(t.updatedAt))} by ${escapeHtml(t.updatedBy)}</span>` : ''}
         </div>
 
-        ${t.details ? `<div class="task-details">${nl2br(t.details)}</div>` : ''}
+        ${t.details ? `<div class="task-details task-details-memo">📝 ${escapeHtml(t.details)}</div>` : ''}
 
         ${memos ? `<div class="memo-list">${memos}</div>` : ''}
 
@@ -477,15 +477,15 @@
 
   // ===== リンク抽出ボタン =====
   document.getElementById('btn-extract-link').addEventListener('click', async () => {
-    const $details = document.getElementById('f-details');
+    const $summary = document.getElementById('f-summary');
     const $url = document.getElementById('f-url');
     const $overlay = document.getElementById('extract-overlay');
     const $msg = document.getElementById('modal-message');
     $msg.innerHTML = '';
 
-    const text = $details.value;
+    const text = $summary.value;
     if (!text.trim()) {
-      $msg.innerHTML = '<div class="alert alert-info">詳細欄が空です。Chatworkのメッセージを貼り付けてからお試しください</div>';
+      $msg.innerHTML = '<div class="alert alert-info">概要欄が空です。Chatworkのメッセージを貼り付けてからお試しください</div>';
       return;
     }
 
@@ -513,7 +513,7 @@
     const cleaned = text.replace(url, '').replace(/\n{3,}/g, '\n\n').trim();
 
     $url.value = url;
-    $details.value = cleaned;
+    $summary.value = cleaned;
 
     $overlay.classList.add('hidden');
     $msg.innerHTML = '<div class="alert alert-success">✓ URLを抽出しました</div>';

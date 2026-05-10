@@ -373,6 +373,17 @@ a:hover { text-decoration: underline; }
   margin: 0;
   flex: 1;
   word-break: break-word;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.task-details-memo {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 6px 0 8px;
 }
 
 .task-meta {
