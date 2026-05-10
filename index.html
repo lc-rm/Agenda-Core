@@ -81,10 +81,21 @@
       </div>
       <div class="field">
         <label class="field-label">クライアント <span class="text-muted">(任意)</span></label>
-        <div class="client-picker" id="client-picker">
-          <input type="hidden" id="f-client-id" value="">
-          <input type="text" id="f-client-search" class="field-input" placeholder="クライアントを検索 / 入力 (例:Link Core)" autocomplete="off">
-          <div class="client-picker-list hidden" id="client-picker-list"></div>
+        <div class="client-picker-row">
+          <div class="client-picker" id="client-picker">
+            <input type="hidden" id="f-client-id" value="">
+            <button type="button" id="f-client-trigger" class="client-picker-trigger">
+              <span id="f-client-display" class="client-picker-display">クライアントを選択</span>
+              <span class="client-picker-arrow">▼</span>
+            </button>
+            <div class="client-picker-dropdown hidden" id="client-picker-dropdown">
+              <div class="client-picker-search-wrap">
+                <input type="text" id="f-client-search" class="field-input client-picker-search" placeholder="🔍 検索" autocomplete="off">
+              </div>
+              <div class="client-picker-list" id="client-picker-list"></div>
+            </div>
+          </div>
+          <button type="button" id="btn-add-client-inline" class="btn client-add-btn" title="新しいクライアントを追加">+</button>
         </div>
       </div>
       <div class="field">
@@ -133,6 +144,27 @@
     <div class="modal-foot">
       <button class="btn" data-close>キャンセル</button>
       <button id="btn-save" class="btn btn-primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- クライアント新規追加モーダル -->
+<div id="modal-add-client" class="modal-backdrop hidden">
+  <div class="modal" style="max-width: 400px;">
+    <div class="modal-head">
+      <h2 class="modal-title">新しいクライアントを追加</h2>
+      <button class="modal-close" data-close-client>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">クライアント名</label>
+        <input type="text" id="f-new-client-name" class="field-input" placeholder="例:株式会社Link Core" autocomplete="off">
+      </div>
+      <div id="add-client-message"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close-client>キャンセル</button>
+      <button id="btn-confirm-add-client" class="btn btn-primary">追加</button>
     </div>
   </div>
 </div>
@@ -480,9 +512,8 @@
       document.getElementById('f-deadline').value = t.deadline || '';
       document.getElementById('f-status').value = t.status || '未着手';
       document.getElementById('f-assignee').value = t.assignee || '向江村 章';
-      // クライアント:既に選んでいるなら名前を検索窓に表示
-      document.getElementById('f-client-id').value = t.clientId || '';
-      document.getElementById('f-client-search').value = getClientName(t.clientId);
+      // クライアント表示を更新
+      setClientPickerValue(t.clientId || '');
     } else {
       // 新規登録時:ステータスも担当者も非表示(自動設定)
       $statusWrap.classList.add('hidden');
@@ -490,10 +521,10 @@
       ['f-url','f-summary','f-details','f-deadline'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('f-status').value = '未着手';
       document.getElementById('f-assignee').value = state.assignee;  // 開いているタブの人
-      document.getElementById('f-client-id').value = '';
-      document.getElementById('f-client-search').value = '';
+      setClientPickerValue('');
     }
-    document.getElementById('client-picker-list').classList.add('hidden');
+    document.getElementById('client-picker-dropdown').classList.add('hidden');
+    document.getElementById('f-client-trigger').classList.remove('open');
     $modal.classList.remove('hidden');
     setTimeout(() => document.getElementById('f-summary').focus(), 50);
   }
@@ -648,10 +679,25 @@
     renderTasks();
   });
 
-  // ===== クライアントピッカー(モーダル内) =====
+  // ===== クライアントピッカー(プルダウン式) =====
+  const $cTrigger = document.getElementById('f-client-trigger');
+  const $cDisplay = document.getElementById('f-client-display');
+  const $cDropdown = document.getElementById('client-picker-dropdown');
   const $cSearch = document.getElementById('f-client-search');
   const $cId = document.getElementById('f-client-id');
   const $cList = document.getElementById('client-picker-list');
+
+  function setClientPickerValue(id) {
+    $cId.value = id || '';
+    if (id) {
+      const c = getClientById(id);
+      $cDisplay.textContent = c ? c.name : '(削除されたクライアント)';
+      $cDisplay.classList.remove('placeholder');
+    } else {
+      $cDisplay.textContent = 'クライアントを選択';
+      $cDisplay.classList.add('placeholder');
+    }
+  }
 
   function renderClientPickerList(query) {
     const q = (query || '').trim().toLowerCase();
@@ -661,63 +707,119 @@
       : sorted;
 
     let html = '';
-    matches.slice(0, 8).forEach(c => {
-      html += `<div class="client-picker-item" data-id="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>`;
-    });
-
-    // 入力された名前と完全一致するものがなければ「+ 新規追加」を出す
-    const hasExact = q && matches.some(c => c.name.toLowerCase() === q);
-    if (q && !hasExact) {
-      html += `<div class="client-picker-item add-new" data-add="${escapeHtml(query.trim())}">+ 「${escapeHtml(query.trim())}」を新規追加</div>`;
+    // 「未選択にする」項目(既に選んでいる場合)
+    if ($cId.value) {
+      html += `<div class="client-picker-clear" data-clear="1">× 選択を解除</div>`;
     }
 
-    if (!html) {
-      html = '<div class="client-picker-empty">クライアントが登録されていません。名前を入力すると新規追加できます</div>';
+    if (matches.length === 0) {
+      if (state.clients.length === 0) {
+        html += '<div class="client-picker-empty">クライアントがまだ登録されていません<br>右の「+」ボタンから追加してください</div>';
+      } else {
+        html += `<div class="client-picker-empty">該当するクライアントがありません</div>`;
+      }
+    } else {
+      matches.forEach(c => {
+        const sel = c.id === $cId.value ? 'selected' : '';
+        html += `<div class="client-picker-item ${sel}" data-id="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>`;
+      });
     }
-
     $cList.innerHTML = html;
-    $cList.classList.remove('hidden');
   }
 
-  $cSearch.addEventListener('focus', () => {
-    renderClientPickerList($cSearch.value);
+  function openClientDropdown() {
+    renderClientPickerList('');
+    $cDropdown.classList.remove('hidden');
+    $cTrigger.classList.add('open');
+    $cSearch.value = '';
+    setTimeout(() => $cSearch.focus(), 30);
+  }
+  function closeClientDropdown() {
+    $cDropdown.classList.add('hidden');
+    $cTrigger.classList.remove('open');
+  }
+
+  $cTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if ($cDropdown.classList.contains('hidden')) {
+      openClientDropdown();
+    } else {
+      closeClientDropdown();
+    }
   });
 
   $cSearch.addEventListener('input', () => {
-    // 編集中はIDをクリア(別のクライアントに変える可能性があるので)
-    $cId.value = '';
     renderClientPickerList($cSearch.value);
   });
+  $cSearch.addEventListener('click', (e) => e.stopPropagation());
 
-  // 候補クリック時の処理
-  $cList.addEventListener('click', async (e) => {
-    const item = e.target.closest('.client-picker-item');
+  $cList.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = e.target.closest('.client-picker-item, .client-picker-clear');
     if (!item) return;
-    if (item.classList.contains('add-new')) {
-      const name = item.dataset.add;
-      try {
-        const created = await AgendaStore.addClient(name);
-        // ローカルキャッシュにも反映
-        if (!state.clients.some(c => c.id === created.id)) {
-          state.clients.push(created);
-        }
-        renderClientFilter();
-        $cId.value = created.id;
-        $cSearch.value = created.name;
-      } catch (err) {
-        alert('クライアント追加に失敗:' + (err.message || ''));
-      }
+    if (item.classList.contains('client-picker-clear')) {
+      setClientPickerValue('');
     } else {
-      $cId.value = item.dataset.id;
-      $cSearch.value = item.dataset.name;
+      setClientPickerValue(item.dataset.id);
     }
-    $cList.classList.add('hidden');
+    closeClientDropdown();
   });
 
-  // モーダル外クリックで候補を閉じる
+  // 外側クリックでドロップダウンを閉じる
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#client-picker')) {
-      $cList.classList.add('hidden');
+      closeClientDropdown();
+    }
+  });
+
+  // ===== クライアント新規追加モーダル =====
+  const $addClientModal = document.getElementById('modal-add-client');
+  const $newClientName = document.getElementById('f-new-client-name');
+  const $addClientMsg = document.getElementById('add-client-message');
+
+  function openAddClientModal() {
+    $newClientName.value = '';
+    $addClientMsg.innerHTML = '';
+    $addClientModal.classList.remove('hidden');
+    setTimeout(() => $newClientName.focus(), 50);
+  }
+  function closeAddClientModal() {
+    $addClientModal.classList.add('hidden');
+  }
+
+  document.getElementById('btn-add-client-inline').addEventListener('click', openAddClientModal);
+
+  $addClientModal.querySelectorAll('[data-close-client]').forEach(b =>
+    b.addEventListener('click', closeAddClientModal)
+  );
+  $addClientModal.addEventListener('click', (e) => {
+    if (e.target === $addClientModal) closeAddClientModal();
+  });
+
+  $newClientName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('btn-confirm-add-client').click();
+    }
+  });
+
+  document.getElementById('btn-confirm-add-client').addEventListener('click', async () => {
+    const name = $newClientName.value.trim();
+    if (!name) {
+      $addClientMsg.innerHTML = '<div class="alert alert-error">クライアント名を入力してください</div>';
+      return;
+    }
+    try {
+      const created = await AgendaStore.addClient(name);
+      if (!state.clients.some(c => c.id === created.id)) {
+        state.clients.push(created);
+      }
+      renderClientFilter();
+      // 自動で選択状態にする
+      setClientPickerValue(created.id);
+      closeAddClientModal();
+    } catch (err) {
+      $addClientMsg.innerHTML = `<div class="alert alert-error">追加失敗:${escapeHtml(err.message || '')}</div>`;
     }
   });
 
