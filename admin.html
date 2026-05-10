@@ -9,15 +9,19 @@
 <body>
 
 <header class="app-header">
-  <h1 class="app-title">
-    <img src="assets/koala-work.png" alt="" class="koala header-koala">
-    Agenda Core <span style="font-size:13px; color:var(--ink-muted); font-weight:500;">管理</span>
-  </h1>
+  <a href="index.html" class="app-title-link">
+    <h1 class="app-title">
+      <img src="assets/koala-work.png" alt="" class="koala header-koala">
+      Agenda Core <span style="font-size:13px; color:var(--ink-muted); font-weight:500;">管理</span>
+    </h1>
+  </a>
   <div class="user-bar">
     <span><span id="user-name" class="user-bar-name">-</span></span>
     <span id="user-role" class="user-bar-role">-</span>
-    <a href="index.html">ダッシュボードへ</a>
-    <a href="#" id="link-logout">ログアウト</a>
+    <div class="user-bar-actions">
+      <a href="index.html" class="user-bar-btn">📋 ダッシュボード</a>
+    </div>
+    <a href="#" id="link-logout" class="user-bar-btn user-bar-btn-logout" title="ログアウト">↗</a>
   </div>
 </header>
 
