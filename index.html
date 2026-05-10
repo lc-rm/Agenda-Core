@@ -50,7 +50,10 @@
 
   <div class="toolbar">
     <button id="btn-new" class="btn btn-primary">+ 新しいタスクを登録</button>
-    <input type="text" id="filter-text" class="field-input" placeholder="検索(概要・詳細)" style="width: 260px;">
+    <input type="text" id="filter-text" class="field-input" placeholder="検索(概要・メモ)" style="width: 220px;">
+    <select id="filter-client" class="field-select" style="width: 200px;">
+      <option value="">すべてのクライアント</option>
+    </select>
     <div class="toolbar-spacer"></div>
     <button id="btn-refresh" class="btn btn-sm">↻ 再読み込み</button>
   </div>
@@ -75,6 +78,14 @@
         <label class="field-label">Chatworkメッセージリンク <span class="text-muted">(任意)</span></label>
         <input type="url" id="f-url" class="field-input" placeholder="https://www.chatwork.com/#!rid...">
         <p class="field-help">該当メッセージのURLを貼り付けると、ワンクリックで開けます</p>
+      </div>
+      <div class="field">
+        <label class="field-label">クライアント <span class="text-muted">(任意)</span></label>
+        <div class="client-picker" id="client-picker">
+          <input type="hidden" id="f-client-id" value="">
+          <input type="text" id="f-client-search" class="field-input" placeholder="クライアントを検索 / 入力 (例:Link Core)" autocomplete="off">
+          <div class="client-picker-list hidden" id="client-picker-list"></div>
+        </div>
       </div>
       <div class="field">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">

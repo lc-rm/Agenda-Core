@@ -11,6 +11,7 @@
     repo: 'Agenda-Core-Data',               // Privateデータリポジトリ名
     tasksFile: 'tasks.json',
     usersFile: 'users.json',
+    clientsFile: 'clients.json',
     branch: 'main'
   };
 
@@ -25,7 +26,7 @@
   const LS_KEY_SESSION = 'agendaCore.session.unlocked';
 
   // ========== 内部状態 ==========
-  const cache = { tasks: null, users: null };
+  const cache = { tasks: null, users: null, clients: null };
 
   // ========== localStorage アクセサ ==========
   function getToken() { return localStorage.getItem(LS_KEY_TOKEN); }
@@ -142,6 +143,39 @@
     return result.content;
   }
 
+  async function loadClients(forceRefresh) {
+    if (!forceRefresh && cache.clients) return cache.clients.content;
+    try {
+      const result = await fetchFile(GITHUB_CONFIG.clientsFile);
+      cache.clients = result;
+      return result.content;
+    } catch (e) {
+      if (e.message === 'NOT_FOUND') {
+        // 初回:空のclients.jsonを作る
+        const initial = { clients: [], version: 1 };
+        const url = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.clientsFile}`;
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${getToken()}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: 'Initialize clients.json',
+            content: b64encode(JSON.stringify(initial, null, 2)),
+            branch: GITHUB_CONFIG.branch
+          })
+        });
+        if (!res.ok) throw new Error(`Init failed: HTTP ${res.status}`);
+        const json = await res.json();
+        cache.clients = { content: initial, sha: json.content.sha };
+        return initial;
+      }
+      throw e;
+    }
+  }
+
   async function updateTasks(mutator, msg) {
     if (!cache.tasks) await loadTasks();
     let attempts = 0;
@@ -177,6 +211,28 @@
       } catch (e) {
         if (e.message === 'SHA_CONFLICT' && attempts < 2) {
           await loadUsers(true);
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  async function updateClients(mutator, msg) {
+    if (!cache.clients) await loadClients();
+    let attempts = 0;
+    while (attempts < 2) {
+      attempts++;
+      const newContent = mutator(JSON.parse(JSON.stringify(cache.clients.content)));
+      newContent.lastModifiedAt = new Date().toISOString();
+      newContent.lastModifiedBy = getCurrentUserDisplayName() || 'unknown';
+      try {
+        const { sha } = await saveFile(GITHUB_CONFIG.clientsFile, newContent, cache.clients.sha, msg);
+        cache.clients = { content: newContent, sha };
+        return newContent;
+      } catch (e) {
+        if (e.message === 'SHA_CONFLICT' && attempts < 2) {
+          await loadClients(true);
           continue;
         }
         throw e;
@@ -294,6 +350,72 @@
     }, `Change role: ${email} -> ${newRole}`);
   }
 
+  // ========== クライアント操作 ==========
+  function genClientId() {
+    return 'client_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+  }
+
+  async function loadClientList() {
+    const data = await loadClients();
+    return (data.clients || []).filter(c => !c.deleted);
+  }
+
+  async function addClient(name) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) throw new Error('クライアント名を入力してください');
+    const me = getCurrentUserDisplayName() || 'unknown';
+    let createdClient = null;
+    await updateClients(content => {
+      content.clients = content.clients || [];
+      // 同名(削除済み含む)があれば、既存を返す or 復活させる
+      const existing = content.clients.find(c => c.name === trimmed);
+      if (existing) {
+        if (existing.deleted) {
+          existing.deleted = false;
+          existing.updatedAt = new Date().toISOString();
+          existing.updatedBy = me;
+        }
+        createdClient = existing;
+        return content;
+      }
+      const newClient = {
+        id: genClientId(),
+        name: trimmed,
+        createdAt: new Date().toISOString(),
+        createdBy: me
+      };
+      content.clients.push(newClient);
+      createdClient = newClient;
+      return content;
+    }, `Add client: ${trimmed}`);
+    return createdClient;
+  }
+
+  async function updateClient(id, newName) {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) throw new Error('クライアント名を入力してください');
+    const me = getCurrentUserDisplayName() || 'unknown';
+    return updateClients(content => {
+      const c = (content.clients || []).find(x => x.id === id);
+      if (!c) throw new Error('該当クライアントが見つかりません');
+      c.name = trimmed;
+      c.updatedAt = new Date().toISOString();
+      c.updatedBy = me;
+      return content;
+    }, `Update client: ${id} -> ${trimmed}`);
+  }
+
+  async function deleteClient(id) {
+    return updateClients(content => {
+      const c = (content.clients || []).find(x => x.id === id);
+      if (!c) throw new Error('該当クライアントが見つかりません');
+      // 論理削除(タスク側のclientId参照を生かすため)
+      c.deleted = true;
+      c.deletedAt = new Date().toISOString();
+      return content;
+    }, `Delete client: ${id}`);
+  }
+
   // ========== タスク操作 ==========
   function genTaskId() {
     return 'task_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -315,6 +437,7 @@
       deadline: taskData.deadline || '',
       status: taskData.status || '未着手',
       assignee: taskData.assignee || '向江村 章',
+      clientId: taskData.clientId || '',
       memos: [],
       createdAt: now,
       createdBy: me,
@@ -421,6 +544,9 @@
 
     // 担当者
     loadUserList, addUser, deleteUser, updateUserRole,
+
+    // クライアント
+    loadClients, loadClientList, addClient, updateClient, deleteClient,
 
     // タスク
     loadTaskList, addTask, updateTask, deleteTask, addMemo,
